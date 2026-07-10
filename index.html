@@ -233,14 +233,16 @@ function showToast(msg){
 
 // ---------- Reconocimiento de voz ----------
 let recognizing = false;
+let shouldListen = false;
 let recognition = null;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 if (SR){
   recognition = new SR();
   recognition.lang = 'es-ES';
-  recognition.continuous = true;
+  recognition.continuous = false;
   recognition.interimResults = true;
   let baseText = "";
+  let lastFinal = "";
 
   recognition.onstart = ()=>{
     recognizing = true;
@@ -250,15 +252,19 @@ if (SR){
     recLabel.classList.add('on');
   };
   recognition.onerror = (e)=>{
+    if (e.error === 'no-speech' || e.error === 'aborted') return;
     setStatus("Error de micrófono: " + e.error, true);
   };
   recognition.onend = ()=>{
     recognizing = false;
-    micBtn.classList.remove('on');
-    recLabel.textContent = "Toca para dictar";
-    recLabel.classList.remove('on');
+    if (shouldListen){
+      setTimeout(()=>{ if (shouldListen){ try{ recognition.start(); } catch(e){} } }, 250);
+    } else {
+      micBtn.classList.remove('on');
+      recLabel.textContent = "Toca para dictar";
+      recLabel.classList.remove('on');
+    }
   };
-  let lastFinal = "";
   recognition.onresult = (event)=>{
     let finalChunk = "";
     let interim = "";
@@ -267,9 +273,8 @@ if (SR){
       if (r.isFinal) finalChunk += r[0].transcript;
       else interim += r[0].transcript;
     }
-    // Android repite a veces el mismo bloque final tras un reinicio interno del motor de voz.
     const finalTrim = finalChunk.trim();
-    if (finalTrim && finalTrim !== lastFinal){
+    if (finalTrim && finalTrim.toLowerCase() !== lastFinal.toLowerCase()){
       baseText += finalTrim + " ";
       lastFinal = finalTrim;
     }
@@ -282,8 +287,11 @@ if (SR){
 
 micBtn.addEventListener('click', ()=>{
   if (!recognition) return;
-  if (recognizing) recognition.stop();
-  else {
+  if (shouldListen){
+    shouldListen = false;
+    recognition.stop();
+  } else {
+    shouldListen = true;
     try{ recognition.start(); } catch(e){ /* ya iniciado */ }
   }
 });
@@ -352,7 +360,6 @@ function limpiarMuletillas(text){
 function partirEnIncidencias(text){
   let t = text;
   CONECTORES_CORTE.forEach(c=>{ t = t.replace(new RegExp(c, "gi"), "|||"); });
-  // también partimos por puntos si hay varias frases largas
   t = t.replace(/\.\s+/g, ".|||");
   return t.split("|||").map(s=>s.trim()).filter(s=>s.split(" ").length >= 3);
 }
